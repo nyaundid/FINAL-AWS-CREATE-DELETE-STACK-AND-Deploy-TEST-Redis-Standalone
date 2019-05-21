@@ -1,0 +1,72 @@
+properties([pipelineTriggers([githubPush()])]) 
+
+node('linux') {
+        
+        stage('test stack'){
+                git credentialsId: '4d0322c1-a51f-49ac-85df-c111b4bd2491', url: 'https://github.com/UST-SEIS665/final-seis665-02-spring2019-nyaundid.git'
+               
+             withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: '0f161cce-57d7-44f6-93ec-e5fd590a9f10', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+    // some block
+
+                sh 'aws cloudformation create-stack --region us-east-1 --stack-name final-test --template-body file://docker-single-server-1.json --parameters ParameterKey=KeyName,ParameterValue=ECO-HW ParameterKey=YourIp,ParameterValue=$(curl ifconfig.me)/32'
+  
+                sh 'aws cloudformation wait stack-create-complete --stack-name final-test --region us-east-1'
+                sh 'aws cloudformation describe-stacks --stack-name final-test --region us-east-1'
+                
+                env.docker1IP = sh returnStdout: true, script: 'aws cloudformation describe-stacks --stack-name final-test --region us-east-1 --query Stacks[].Outputs[].[OutputValue] --output text'
+                
+                
+                sshagent(['adc0c413-a7f2-4cb3-9707-72f31a1186b5']) {
+                sh 'ssh -o StrictHostKeyChecking=no ubuntu@${docker1IP} uptime'
+    // some block
+              }
+           }
+
+        
+            
+    } 
+        stage('Deploy Redis Stanalone')    {
+       
+                sshagent(['adc0c413-a7f2-4cb3-9707-72f31a1186b5']) {
+                
+                
+                sh 'ssh ubuntu@${docker1IP} docker run -d --name redis -p 6379:6379 redis:latest'
+        }
+        
+    }
+
+    
+    stage('Test Redis Standalone') {
+            
+        sshagent(['adc0c413-a7f2-4cb3-9707-72f31a1186b5']) {
+                
+        sh 'ssh ubuntu@${docker1IP} redis-cli set hello world'
+             
+                
+       sh 'ssh ubuntu@${docker1IP} redis-cli set get world'
+            
+        }
+        
+    }
+            stage('Delete Test Stack') {
+                    sshagent(['adc0c413-a7f2-4cb3-9707-72f31a1186b5']) {
+             
+
+             
+            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: '0f161cce-57d7-44f6-93ec-e5fd590a9f10', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+            
+                    
+          sh 'aws cloudformation delete-stack --stack-name final-test --region us-east-1'
+        
+                    
+        }
+      } 
+        
+    }
+}     
+
+
+
+
+    
+
